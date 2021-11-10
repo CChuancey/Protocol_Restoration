@@ -1,8 +1,8 @@
-
 #include "tcp.h"
 #include <netinet/ip.h>
 #include <netinet/tcp.h>
 #include <time.h>
+#include "checksum.h"
 
 // TCP维护的变量
 // hash table
@@ -17,11 +17,47 @@ int tcp_stream_pool_size = 0;
 TCP_Stream* free_streams = NULL;
 
 // 核心函数，处理TCP报文的函数
-void process_tcp(const unsigned char* data, const int len) {
+void process_tcp(const unsigned char* data, const int skblen) {  // skblen?
     struct iphdr* ipheader = (struct iphdr*)data;
     struct tcphdr* tcpheader = (struct tcphdr*)(data + ipheader->ihl * 4);
 
-    //校验和、三次握手、四次挥手、数据包交付
+    //检查TCP报文是否正常
+    // 长度
+    unsigned int ip_packet_len = ntohs(ipheader->tot_len);  // ip报文的总长度
+    if (ip_packet_len < 4 * ipheader->ihl + sizeof(struct tcphdr)) {
+        // 数据包长度异常
+        show_log(__func__, "ip packet length is invaild!");
+        // free(data);
+        return;
+    }
+    // ip地址以及端口号不能为0
+    if ((ipheader->saddr | ipheader->daddr) == 0) {
+        show_log(__func__, "ip address is invalid!");
+        // free(data);
+        return;
+    }
+    if ((tcpheader->source | tcpheader->dest) == 0) {
+        show_log(__func__, "port number is invalid!");
+        // free
+        return;
+    }
+
+    //数据包的校验和
+    if (my_tcp_check(tcpheader, ip_packet_len - 4 * ipheader->ihl,
+                     ipheader->saddr, ipheader->daddr)) {
+        show_log(__func__, "tcp check sum error!");
+        // free
+        return;
+    }
+#ifdef _DEBUG
+    puts("tcp process function:data packet ok!");
+#endif
+
+    //-----端口匹配------
+    // to do 读取前缀树规则（匹配IP、端口号）
+
+    //三次握手、四次挥手、数据包交付
+    
 }
 
 //初始化HashTable、stream_pool、free_streams

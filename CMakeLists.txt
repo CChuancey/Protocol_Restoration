@@ -8,4 +8,5 @@ aux_source_directory(./src SRC_LIST)
 add_compile_options(-std=gnu11) #c99支持for循环内初始化变量
 
 add_executable(main ${SRC_LIST}) # 注意用的花括号
+add_definitions(-D _DEBUG)
 

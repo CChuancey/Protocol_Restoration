@@ -20,6 +20,10 @@
 #define WINDOW_SIZE_OFFSET 14
 #define CHECKSUM_OFFET 16
 
+// 专攻process tcp输出log信息
+#define show_log(FUN, MSG) \
+    { printf("%s:%s\n", FUN, MSG); }
+
 typedef struct {
 } Packet_Buffer;
 
