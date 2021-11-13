@@ -41,7 +41,7 @@ void process_tcp(const unsigned char* data, const int skblen) {  // skblen?
         // free
         return;
     }
-
+    printf("packet size:%u\n",ntohs(ipheader->tot_len));
     //数据包的校验和
     if (my_tcp_check(tcpheader, ip_packet_len - 4 * ipheader->ihl,
                      ipheader->saddr, ipheader->daddr)) {
