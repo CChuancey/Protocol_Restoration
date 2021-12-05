@@ -20,43 +20,52 @@
 #define WINDOW_SIZE_OFFSET 14
 #define CHECKSUM_OFFET 16
 
-// 专攻process tcp输出log信息
+// 专供process tcp输出log信息
 #define show_log(FUN, MSG) \
     { printf("%s:%s\n", FUN, MSG); }
 
-typedef struct {
-} Packet_Buffer;
+typedef struct skbuff {
+    struct skbuff* next;
+    struct skbuff* pre;
+    void* data;
+    uint32_t len;       // data长度
+    uint32_t truesize;  //结构体+data长度
+    char fin;
+    char rst;
+    uint32_t seq;
+    uint32_t ack;
+} Socket_Buffer;
 
-typedef enum {
-    FIN = 0x01,
-    SYN = 0x02,
-    RST = 0x04,
-    PSH = 0x08,
-    ACK = 0x10,
-    URG = 0x20
-} TCP_Flags;
+typedef struct {
+    unsigned short src_port;
+    unsigned short dst_port;
+    unsigned int src_addr;
+    unsigned int dst_addr;
+} Tuple;
+
+typedef struct proc_node {  //回调函数
+    void (*item)();
+    struct proc_node* next;
+} Proc_node;
 
 typedef struct {
-    uint16_t srcPort;
-    uint16_t dstPort;
+    char state;           //半连接的状态
+    unsigned char* data;  //数据包的地址
     uint32_t seqNum;
     uint32_t ackNum;
     uint8_t headerLen;
-    TCP_Flags flag;
-    uint16_t windowSize;
-    uint16_t checkSum;
-} TCP_Packet_Header;
-
-typedef struct {
-    char state;  //半连接的状态
-    char* data;  //数据包的地址
-    TCP_Packet_Header header;
-    Packet_Buffer* list;
-    Packet_Buffer* end_pointer;
+    Socket_Buffer* list;
+    Socket_Buffer* listtail;
+    uint32_t rmem_alloc;  //分配给list的空间
+    uint32_t first_data_seq;  //发送的第一个字节序列号，两个半连接不相同
+    uint32_t ordered_count;  //接收的有序数据 EXPSEQ-first_data_seq
+    uint32_t offset;    //表示应用层处理的数据的长度？？？？
+    uint32_t buffsize;  // 存储data的buffer大小,不等于data的长度
 } TCP_Half_Stream;
 
 typedef struct TCP_Stream {
     int hash_index;
+    Tuple tuple;
     TCP_Half_Stream server;
     TCP_Half_Stream client;
 
@@ -65,6 +74,8 @@ typedef struct TCP_Stream {
     struct TCP_Stream* next_time;  //时间链表
     struct TCP_Stream* pre_time;
 
+    struct TCP_Stream* next_free;  // 指向下一个空闲的结点
+    int normal;                    //是否是完整的TCP Stream
 } TCP_Stream;
 
 typedef struct TCP_Stream_Timeout {
@@ -74,7 +85,8 @@ typedef struct TCP_Stream_Timeout {
     struct TCP_Stream_Timeout* next;
 } TCP_Stream_Timeout;
 
-void get_TCP_header_info(const unsigned char* start, TCP_Packet_Header* header);
+#define EXPSEQ (snd->first_data_seq + rcv->ordered_count)
+
 void process_tcp(const unsigned char* data, const int len);
 int init_tcp(const int size);  // size为管理的tcp流的上限
 #endif

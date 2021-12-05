@@ -2,7 +2,6 @@
 #include <arpa/inet.h>
 #include <net/ethernet.h>
 #include <netinet/ip.h>
-#include <netinet/tcp.h>
 #include <pcap.h>
 #include <stdio.h>
 #include <unistd.h>
