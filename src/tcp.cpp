@@ -22,24 +22,24 @@ static TCP_Stream* free_streams = NULL;
 // 所有注册的回调函数链表
 Proc_node* pnode = NULL;
 
-void register_tcp_callbk(void*(*fun)) {
+void register_tcp_callbk(TCP_Fun fun) {
     // 先检查是否已经存在
     for (Proc_node* node = pnode; node; node = node->next) {
-        if (node->item == fun) {
+        if (node->fun == fun) {
             return;
         }
     }
     // 头插法将回调函数插入到链表头部
     Proc_node* nwnode = (Proc_node*)malloc(sizeof(Proc_node));
-    nwnode->item = fun;
+    nwnode->fun = fun;
     nwnode->next = pnode;
     pnode = nwnode;
 }
 
-void unregister_tcp_callbk(void*(*fun)) {
+void unregister_tcp_callbk(TCP_Fun fun) {
     Proc_node* pre = NULL;
     for (Proc_node* node = pnode; node; node = node->next) {
-        if (fun == node->item) {
+        if (fun == node->fun) {
             if (pre) {
                 pre->next = node->next;
             } else {
@@ -216,9 +216,7 @@ static void notify(TCP_Stream* stream, TCP_Half_Stream* rcv, char whatto) {
     int fromclient = ((rcv == &stream->client) ? 1 : 0);
     for (Proc_node* node = pnode; node; node = node->next) {
         // 类型值的强制转换可能出现问题
-        int ret =
-            (int)((node->item)(fromclient, rcv->data + rcv->offset,
-                               rcv->new_count, stream->hash_index, whatto));
+        int ret = (int)((node->fun)(stream, fromclient, whatto));
         switch (ret) {
             case -2:  //不是属于该回调函数处理的数据
                 break;
@@ -258,7 +256,7 @@ static void add_data_from_socket_buffer(TCP_Half_Stream* snd,
     /*********************************************/
 }
 
-static void copy2current_headers(void* dst,
+static void copy2current_headers(unsigned char* dst,
                                  struct tcphdr* tcpheader,
                                  struct iphdr* ipheader) {
     memcpy(dst, ipheader, ipheader->ihl * 4);
@@ -279,7 +277,7 @@ static void tcp_queque(TCP_Stream* stream,
         // 只有小于等于希望收到的序列号，才能使滑动窗口后移，才能向应用层交付有序数据
         // seq+datalen<EXPSEQ说明是个彻彻底底的旧包,需要释放，否则会使EXPSEQ后移
         if (after(tcp_seq + datalen + tcpheader->fin, EXPSEQ)) {  //交叉情况
-            copy2current_headers(&rcv->current_headers, tcpheader, ipheader);
+            copy2current_headers(rcv->current_headers, tcpheader, ipheader);
             rcv->current_headers_len = tcpheader->doff * 4 + ipheader->ihl * 4;
             add_data_from_socket_buffer(snd, rcv, data, datalen, tcp_seq);
 
@@ -293,7 +291,7 @@ static void tcp_queque(TCP_Stream* stream,
                 // list中的乱序报文满足有序性&&存在序列号交叉的情况
                 if (after(packet->seq + packet->len + packet->fin, EXPSEQ)) {
                     //头直接覆盖，数据追加
-                    memcpy(&rcv->current_headers, packet->headers,
+                    memcpy(rcv->current_headers, packet->headers,
                            packet->headers_len);
                     rcv->current_headers_len = packet->headers_len;
                     add_data_from_socket_buffer(snd, rcv, packet->data,
@@ -560,7 +558,7 @@ int init_tcp(const int size) {
         return -1;
     }
     hash_table_size = size;
-    hash_table = calloc(size, sizeof(TCP_Stream*));
+    hash_table = (TCP_Stream**)calloc(size, sizeof(TCP_Stream*));
     if (hash_table == NULL) {
         fprintf(stderr, "init failed! no memeory\n");
         return -1;
