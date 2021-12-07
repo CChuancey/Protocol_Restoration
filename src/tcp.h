@@ -2,6 +2,7 @@
 #define __TCP_H__
 
 #include <arpa/inet.h>
+#include <netinet/tcp.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -30,6 +31,8 @@ typedef struct skbuff {
     void* data;
     uint32_t len;       // data长度
     uint32_t truesize;  //结构体+data长度
+    struct tcphdr* headers;
+    uint32_t headers_len;
     char fin;
     char rst;
     uint32_t seq;
@@ -44,7 +47,7 @@ typedef struct {
 } Tuple;
 
 typedef struct proc_node {  //回调函数
-    void (*item)();
+    void* (*item)();
     struct proc_node* next;
 } Proc_node;
 
@@ -59,8 +62,11 @@ typedef struct {
     uint32_t rmem_alloc;  //分配给list的空间
     uint32_t first_data_seq;  //发送的第一个字节序列号，两个半连接不相同
     uint32_t ordered_count;  //接收的有序数据 EXPSEQ-first_data_seq
-    uint32_t offset;    //表示应用层处理的数据的长度？？？？
-    uint32_t buffsize;  // 存储data的buffer大小,不等于data的长度
+    uint32_t offset;     //表示应用层处理的数据的长度？？？？
+    uint32_t buffsize;   // 存储data的buffer大小,不等于data的长度
+    uint32_t new_count;  // 本次新提供的数据包的长度
+    struct tcphdr current_headers;  //本次数据包的头
+    uint32_t current_headers_len;   //本次数据包头的长度
 } TCP_Half_Stream;
 
 typedef struct TCP_Stream {

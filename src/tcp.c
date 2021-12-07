@@ -22,7 +22,7 @@ static TCP_Stream* free_streams = NULL;
 // 所有注册的回调函数链表
 Proc_node* pnode = NULL;
 
-void register_tcp_callbk(void(*fun)) {
+void register_tcp_callbk(void*(*fun)) {
     // 先检查是否已经存在
     for (Proc_node* node = pnode; node; node = node->next) {
         if (node->item == fun) {
@@ -36,7 +36,7 @@ void register_tcp_callbk(void(*fun)) {
     pnode = nwnode;
 }
 
-void unregister_tcp_callbk(void(*fun)) {
+void unregister_tcp_callbk(void*(*fun)) {
     Proc_node* pre = NULL;
     for (Proc_node* node = pnode; node; node = node->next) {
         if (fun == node->item) {
@@ -279,7 +279,7 @@ static void tcp_queque(TCP_Stream* stream,
         // 只有小于等于希望收到的序列号，才能使滑动窗口后移，才能向应用层交付有序数据
         // seq+datalen<EXPSEQ说明是个彻彻底底的旧包,需要释放，否则会使EXPSEQ后移
         if (after(tcp_seq + datalen + tcpheader->fin, EXPSEQ)) {  //交叉情况
-            copy2current_headers(rcv->current_headers, tcpheader, ipheader);
+            copy2current_headers(&rcv->current_headers, tcpheader, ipheader);
             rcv->current_headers_len = tcpheader->doff * 4 + ipheader->ihl * 4;
             add_data_from_socket_buffer(snd, rcv, data, datalen, tcp_seq);
 
@@ -293,7 +293,7 @@ static void tcp_queque(TCP_Stream* stream,
                 // list中的乱序报文满足有序性&&存在序列号交叉的情况
                 if (after(packet->seq + packet->len + packet->fin, EXPSEQ)) {
                     //头直接覆盖，数据追加
-                    memcpy(rcv->current_headers, packet->headers,
+                    memcpy(&rcv->current_headers, packet->headers,
                            packet->headers_len);
                     rcv->current_headers_len = packet->headers_len;
                     add_data_from_socket_buffer(snd, rcv, packet->data,
