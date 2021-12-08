@@ -20,8 +20,7 @@ void packet_handler(unsigned char* user,
     if (ntohs(ethernet_header->ether_type) == ETHERTYPE_IP &&
         ip_header->protocol == IPPROTO_TCP) {
         // printf("packet size:%u\n", ntohs(ip_header->tot_len));
-        callbk(packet + sizeof(struct ether_header),
-               0);  //第二个skblen值待定
+        callbk(packet + sizeof(struct ether_header));
     }
 }
 

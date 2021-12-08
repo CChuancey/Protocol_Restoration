@@ -5,7 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/time.h>
+#include <time.h>
 #include <unistd.h>
 #include "hash.h"
 
@@ -64,7 +64,7 @@ typedef struct TCP_Stream {
 
     struct TCP_Stream* next_node;  //一条流在哈希表的位置
     struct TCP_Stream* pre_node;
-    struct TCP_Stream* next_time;  //时间链表
+    struct TCP_Stream* next_time;  //时序链表
     struct TCP_Stream* pre_time;
 
     struct TCP_Stream* next_free;  // 指向下一个空闲的结点
@@ -73,7 +73,7 @@ typedef struct TCP_Stream {
 
 typedef struct TCP_Stream_Timeout {
     TCP_Stream* a_tcp;
-    struct timeval tv;
+    time_t sec;
     struct TCP_Stream_Timeout* pre;
     struct TCP_Stream_Timeout* next;
 } TCP_Stream_Timeout;
@@ -85,9 +85,10 @@ typedef struct proc_node {  //回调函数
     struct proc_node* next;
 } Proc_node;
 
-#define EXPSEQ (snd->first_data_seq + rcv->ordered_count)
+#define EXPSEQ (snd->first_data_seq + rcv->count)
 
-void process_tcp(const unsigned char* data, const int len);
+void process_tcp(const unsigned char* data);
 int init_tcp(const int size);  // size为管理的tcp流的上限
+void free_timeout_tcp_streams(time_t*);
 
 #endif
