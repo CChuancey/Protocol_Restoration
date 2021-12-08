@@ -22,6 +22,36 @@ static TCP_Stream* free_streams = NULL;
 // 所有注册的回调函数链表
 Proc_node* pnode = NULL;
 
+void register_tcp_callbk(void(*fun)) {
+    // 先检查是否已经存在
+    for (Proc_node* node = pnode; node; node = node->next) {
+        if (node->item == fun) {
+            return;
+        }
+    }
+    // 头插法将回调函数插入到链表头部
+    Proc_node* nwnode = (Proc_node*)malloc(sizeof(Proc_node));
+    nwnode->item = fun;
+    nwnode->next = pnode;
+    pnode = nwnode;
+}
+
+void unregister_tcp_callbk(void(*fun)) {
+    Proc_node* pre = NULL;
+    for (Proc_node* node = pnode; node; node = node->next) {
+        if (fun == node->item) {
+            if (pre) {
+                pre->next = node->next;
+            } else {
+                pnode = node->next;
+            }
+            free(node);
+            return;
+        }
+        pre = node;
+    }
+}
+
 static int mk_hash_index(Tuple* tuple) {
     int hash = mkhash(tuple->src_addr, tuple->src_port, tuple->dst_addr,
                       tuple->dst_port);
@@ -114,7 +144,7 @@ static void add_new_tcp(struct tcphdr* tcpheader,
     hash_table[hash_index] = stream;
 }
 
-TCP_Stream* find_tcp_stream(Tuple* tuple) {
+static TCP_Stream* find_tcp_stream(Tuple* tuple) {
     int hash_index = mk_hash_index(tuple);
     TCP_Stream* a_tcp = NULL;
     // 链表满的情况下出现死循环？
@@ -125,9 +155,9 @@ TCP_Stream* find_tcp_stream(Tuple* tuple) {
     return a_tcp ? a_tcp : NULL;
 }
 
-TCP_Stream* find_stream(struct tcphdr* tcpheader,
-                        struct iphdr* ipheader,
-                        int* from_client) {
+static TCP_Stream* find_stream(struct tcphdr* tcpheader,
+                               struct iphdr* ipheader,
+                               int* from_client) {
     Tuple tuple;
     //提取四元组
     generate_tuple(&tuple, ipheader, tcpheader, 1);
@@ -178,6 +208,35 @@ static void add2buff(TCP_Half_Stream* rcv,
     }
     memcpy(rcv->data + rcv->ordered_count - rcv->offset, data, datalen);
     rcv->ordered_count += datalen;
+    rcv->new_count = datalen;
+}
+
+static void notify(TCP_Stream* stream, TCP_Half_Stream* rcv, char whatto) {
+    // 1 得到上下行
+    int fromclient = ((rcv == &stream->client) ? 1 : 0);
+    for (Proc_node* node = pnode; node; node = node->next) {
+        // 类型值的强制转换可能出现问题
+        int ret =
+            (int)((node->item)(fromclient, rcv->data + rcv->offset,
+                               rcv->new_count, stream->hash_index, whatto));
+        switch (ret) {
+            case -2:  //不是属于该回调函数处理的数据
+                break;
+            case -1:  //删除
+                rcv->ordered_count = 0;
+                rcv->offset = 0;
+                break;
+            case 0:  //转发
+                break;
+            default:  //回调函数处理的字节数
+                // 先转发，再移动数据
+                rcv->offset = rcv->ordered_count - ret;
+                rcv->ordered_count = rcv->offset;
+                memmove(rcv->data, rcv->data + ret, rcv->offset);
+        }
+    }
+    // 没有回调函数处理，转发
+    // put forward 不需要free?
 }
 
 static void add_data_from_socket_buffer(TCP_Half_Stream* snd,
@@ -199,6 +258,13 @@ static void add_data_from_socket_buffer(TCP_Half_Stream* snd,
     /*********************************************/
 }
 
+static void copy2current_headers(void* dst,
+                                 struct tcphdr* tcpheader,
+                                 struct iphdr* ipheader) {
+    memcpy(dst, ipheader, ipheader->ihl * 4);
+    memcpy(dst + ipheader->ihl * 4, tcpheader, tcpheader->doff * 4);
+}
+
 // 核心函数，TCP乱序重组+寻找listener
 static void tcp_queque(TCP_Stream* stream,
                        struct tcphdr* tcpheader,
@@ -213,6 +279,8 @@ static void tcp_queque(TCP_Stream* stream,
         // 只有小于等于希望收到的序列号，才能使滑动窗口后移，才能向应用层交付有序数据
         // seq+datalen<EXPSEQ说明是个彻彻底底的旧包,需要释放，否则会使EXPSEQ后移
         if (after(tcp_seq + datalen + tcpheader->fin, EXPSEQ)) {  //交叉情况
+            copy2current_headers(rcv->current_headers, tcpheader, ipheader);
+            rcv->current_headers_len = tcpheader->doff * 4 + ipheader->ihl * 4;
             add_data_from_socket_buffer(snd, rcv, data, datalen, tcp_seq);
 
             //移动EXPSEQ后，检查list链表上是否满足了连续有序性
@@ -224,6 +292,10 @@ static void tcp_queque(TCP_Stream* stream,
 
                 // list中的乱序报文满足有序性&&存在序列号交叉的情况
                 if (after(packet->seq + packet->len + packet->fin, EXPSEQ)) {
+                    //头直接覆盖，数据追加
+                    memcpy(rcv->current_headers, packet->headers,
+                           packet->headers_len);
+                    rcv->current_headers_len = packet->headers_len;
                     add_data_from_socket_buffer(snd, rcv, packet->data,
                                                 packet->len, packet->seq);
                 }
@@ -273,6 +345,8 @@ static void tcp_queque(TCP_Stream* stream,
             // add stream to timeout list
         }
         packet->seq = tcp_seq;
+        copy2current_headers(packet->headers, tcpheader, ipheader);
+        packet->headers_len = tcpheader->doff * 4 + ipheader->ihl * 4;
         Socket_Buffer* p = rcv->listtail;
         // 有序插入，从后往前找
         while (1) {
@@ -367,9 +441,13 @@ void process_tcp(const unsigned char* data, const int skblen) {  // skblen?
     if (tcpheader->syn && tcpheader->ack == 0 && tcpheader->rst == 0) {
         if (!stream) {  //监听完整的TCP流，更新半连接的状态，normal标志位值为一
             add_new_tcp(tcpheader, ipheader, 1);
-        } else {  // 丢弃
-            // free
+        } else {  // 转发
+            if (receiver->state == TCP_SYN_RECV) {
+                // free,抵御DOS攻击;
+                return;
+            }
         }
+        // 转发 put forward to
         return;
     }
     // SYN+ACK?
@@ -386,10 +464,10 @@ void process_tcp(const unsigned char* data, const int skblen) {  // skblen?
                 stream->server.state = TCP_SYN_RECV;
                 stream->server.ackNum = ntohl(tcpheader->ack_seq);
                 stream->server.seqNum = ntohl(tcpheader->seq);
-            } else {
-                // free;
             }
+            //无条件转发数据,SYN_ACK超时和冗余双发的协议栈都有处理机制
         }
+        // put forward to
         return;
     }
 
@@ -399,8 +477,14 @@ void process_tcp(const unsigned char* data, const int skblen) {  // skblen?
         // 检查流的状态，更新流状态
         // 绑定监听的回调函数
         if (!stream) {
-            // 建流，在最后判断是否有数据字段，查找listener
+            // 建流，在最后判断是否有数据字段
             add_new_tcp(tcpheader, ipheader, 0);
+            if (datalen > 0) {
+                // process data
+                // 通知listeners处理数据+寻找新的listener
+                tcp_queque(stream, tcpheader, ipheader, sender, receiver, data,
+                           datalen);
+            }
         } else {
             // handle_ack();
             // if (before(ntohl(tcpheader->seq) + datalen), receiver->ackNum) {
@@ -430,18 +514,38 @@ void process_tcp(const unsigned char* data, const int skblen) {  // skblen?
                     tcp_queque(stream, tcpheader, ipheader, sender, receiver,
                                data, datalen);
                 }
-            }  // to do: FIN的ACK
+            }
         }
     }
     if (tcpheader->rst) {
         // stream=NULL=>直接return
-        // 判定是否存在listener，通知其释放资源
-        // 否则直接释放tcp资源
+        // 遍历回调函数链表，通知其释放资源
+        // 释放tcp资源
+        if (stream == NULL) {
+            if (datalen = 0) {
+                // 转发
+            }
+            return;
+        }
+        // 加入超时链表
         return;
     }
     if (tcpheader->fin) {
         // stream=NULL=>直接return
         // 更新两个半连接的状态，normal=0的流也可正常处理，删流靠超时时间
+        if (stream == NULL) {  //新流只捕到FIN包
+            if (datalen = 0) {
+                // 转发
+            }
+            return;
+        }
+        if (sender->state == TCP_ESTABLISHED &&
+            receiver->state == TCP_ESTABLISHED) {
+            sender->state = TCP_CLOSING;
+            //加入超时链表
+        } else if (datalen == 0) {
+            // put forward to 转发
+        }
         return;
     }
 }
