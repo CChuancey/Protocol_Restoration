@@ -77,7 +77,7 @@ typedef struct TCP_Stream_Timeout {
     struct TCP_Stream_Timeout* next;
 } TCP_Stream_Timeout;
 
-typedef int (*TCP_Fun)(TCP_Stream*, int, int);
+typedef int (*TCP_Fun)(TCP_Stream*, bool, bool);
 
 typedef struct proc_node {  //回调函数
     TCP_Fun fun;

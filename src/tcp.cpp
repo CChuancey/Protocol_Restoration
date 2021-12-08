@@ -213,7 +213,7 @@ static void add2buff(TCP_Half_Stream* rcv,
 
 static void notify(TCP_Stream* stream, TCP_Half_Stream* rcv, char whatto) {
     // 1 得到上下行
-    int fromclient = ((rcv == &stream->client) ? 1 : 0);
+    bool fromclient = ((rcv == &stream->client) ? true : false);
     for (Proc_node* node = pnode; node; node = node->next) {
         // 类型值的强制转换可能出现问题
         int ret = (int)((node->fun)(stream, fromclient, whatto));
