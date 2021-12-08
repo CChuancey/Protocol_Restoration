@@ -76,9 +76,9 @@ static void generate_tuple(Tuple* tuple,
 }
 
 // 将新的tcp_stream插入到hash table 的表头,更新两个半连接的状态信息
-static void add_new_tcp(struct tcphdr* tcpheader,
-                        struct iphdr* ipheader,
-                        int normal) {
+static TCP_Stream* add_new_tcp(struct tcphdr* tcpheader,
+                               struct iphdr* ipheader,
+                               int normal) {
     // 监听的流达到上限，将timeout链表表头的设为超时，删除流
     if (tcp_num > tcp_stream_pool_size) {  // 超限
         //超限删流
@@ -142,6 +142,11 @@ static void add_new_tcp(struct tcphdr* tcpheader,
     }
     stream->pre_node = NULL;
     hash_table[hash_index] = stream;
+#ifdef _DEBUG
+    printf("one tcp strem created! sport:%d,dport:%d\n", tuple.src_port,
+           tuple.dst_port);
+#endif
+    return stream;
 }
 
 static TCP_Stream* find_tcp_stream(Tuple* tuple) {
@@ -438,7 +443,7 @@ void process_tcp(const unsigned char* data, const int skblen) {  // skblen?
     // SYN？
     if (tcpheader->syn && tcpheader->ack == 0 && tcpheader->rst == 0) {
         if (!stream) {  //监听完整的TCP流，更新半连接的状态，normal标志位值为一
-            add_new_tcp(tcpheader, ipheader, 1);
+            stream = add_new_tcp(tcpheader, ipheader, 1);
         } else {  // 转发
             if (receiver->state == TCP_SYN_RECV) {
                 // free,抵御DOS攻击;
@@ -454,7 +459,7 @@ void process_tcp(const unsigned char* data, const int skblen) {  // skblen?
         // ，在流中判定半连接的状态是否为SYN_SENT和CLOSED，是则置normal标志位值为一
         // 不在流中更新半连接的状态
         if (!stream) {  // hash表中没有，需要建表
-            add_new_tcp(tcpheader, ipheader, 0);
+            stream = add_new_tcp(tcpheader, ipheader, 0);
         } else {  // 正常的的数据流，检查半连接的标志位,更新标志位,序列号，ACK值
             if (stream->server.state == TCP_CLOSE &&
                 stream->client.state == TCP_SYN_SENT &&
@@ -476,10 +481,20 @@ void process_tcp(const unsigned char* data, const int skblen) {  // skblen?
         // 绑定监听的回调函数
         if (!stream) {
             // 建流，在最后判断是否有数据字段
-            add_new_tcp(tcpheader, ipheader, 0);
+            stream = add_new_tcp(tcpheader, ipheader, 0);
+            int fromclient =
+                ntohl(tcpheader->source) < ntohl(tcpheader->dest) ? 0 : 1;
+            if (fromclient) {
+                sender = &stream->client;
+                receiver = &stream->server;
+            } else {
+                sender = &stream->server;
+                receiver = &stream->client;
+            }
             if (datalen > 0) {
                 // process data
                 // 通知listeners处理数据+寻找新的listener
+
                 tcp_queque(stream, tcpheader, ipheader, sender, receiver, data,
                            datalen);
             }
@@ -496,6 +511,10 @@ void process_tcp(const unsigned char* data, const int skblen) {  // skblen?
                 stream->client.state = TCP_ESTABLISHED;
                 stream->client.seqNum = ntohl(tcpheader->seq);
                 stream->client.ackNum = ntohl(tcpheader->ack_seq);
+#ifdef _DEBUG
+                printf("one stream established,sport:%d,dstport:%d\n",
+                       stream->tuple.src_port, stream->tuple.dst_port);
+#endif
             } else if (!from_client &&
                        stream->client.state == TCP_ESTABLISHED &&
                        stream->server.state == TCP_SYN_RECV) {
@@ -572,9 +591,9 @@ int init_tcp(const int size) {
         return -1;
     }
     for (int i = 0; i < tcp_stream_pool_size; i++) {
-        tcp_stream_pool[i].next_node = &(tcp_stream_pool[i + 1]);
+        tcp_stream_pool[i].next_free = &(tcp_stream_pool[i + 1]);
     }
-    tcp_stream_pool[tcp_stream_pool_size].next_node = NULL;
+    tcp_stream_pool[tcp_stream_pool_size].next_free = NULL;
     free_streams = tcp_stream_pool;
     init_hash();
     return 0;

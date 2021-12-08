@@ -47,10 +47,11 @@ typedef struct {
     Socket_Buffer* listtail;
     uint32_t rmem_alloc;  //分配给list的空间
     uint32_t first_data_seq;  //发送的第一个字节序列号，两个半连接不相同
-    uint32_t ordered_count;  //接收的有序数据 EXPSEQ-first_data_seq
-    uint32_t offset;     //表示应用层处理的数据的长度？？？？
-    uint32_t buffsize;   // 存储data的buffer大小,不等于data的长度
-    uint32_t new_count;  // 本次新提供的数据包的长度
+    uint32_t ordered_count;  //本次交付的data的长度=offset+new_count
+    uint32_t offset;         // offset=ordered_count-应用层处理的长度
+    uint32_t buffsize;       // 存储data的buffer大小,不等于data的长度
+    uint32_t new_count;      // 本次交付的data长度
+    uint32_t count;          // 收到有序数据的总长度
     unsigned char current_headers[HEADERS_MAX_LEN];  //本次数据包的头
     uint32_t current_headers_len;  //本次数据包头的长度
 } TCP_Half_Stream;

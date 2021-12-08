@@ -15,8 +15,7 @@ int main() {
     int manage_tcp_stream_nums = 60000;
     init_hash();
     init_tcp(manage_tcp_stream_nums);
-    caputure_packet_from_file("./doc/one_integral_tcp_stream.pcap",
-                              process_tcp);
+    caputure_packet_from_file("./doc/data.pcap", process_tcp);
     release_pcap_resource();
     return 0;
 }

@@ -35,7 +35,7 @@ int init_tls(const int size) {
         return -1;
     }
     for (int i = 0; i < tls_stream_pool_size; i++) {
-        tls_stream_pool[i].next_node = &(tls_stream_pool[i + 1]);
+        tls_stream_pool[i].next = &(tls_stream_pool[i + 1]);
     }
     tls_stream_pool[tls_stream_pool_size].next = NULL;
     free_streams = tls_stream_pool;
@@ -77,7 +77,7 @@ static void add_new_tls(Half_TLS_Stream* rcv,
                         uint32_t datalen) {
     memset(rcv, 0, sizeof(Half_TLS_Stream));
     rcv->data = data;
-    rcv->data = datalen;
+    rcv->datalen = datalen;
 }
 
 /**
@@ -96,7 +96,7 @@ int process_tls(TCP_Stream* stream, bool fromclient, bool del) {
     TLS_Stream* a_tls = find_stream(stream->hash_index, &stream->tuple);
     unsigned char* data = (unsigned char*)malloc(sizeof(unsigned char));
     if (data == NULL) {
-        show_log(__fun__, "No Memory");
+        show_log(__func__, "No Memory");
         abort();
     }
     uint32_t datalen = 0;
