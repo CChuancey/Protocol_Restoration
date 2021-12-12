@@ -91,4 +91,7 @@ void process_tcp(const unsigned char* data);
 int init_tcp(const int size);  // size为管理的tcp流的上限
 void free_timeout_tcp_streams(time_t*);
 
+void register_tcp_callbk(TCP_Fun);
+void unregister_tcp_callbk(TCP_Fun);
+
 #endif

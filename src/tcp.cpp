@@ -232,6 +232,7 @@ static TCP_Stream* add_new_tcp(struct tcphdr* tcpheader,
             generate_tuple(&tuple, ipheader, tcpheader, 0);
             stream->client.state = TCP_SYN_SENT;
             stream->client.seqNum = ntohl(tcpheader->ack_seq) - 1;
+            stream->client.first_data_seq = stream->client.seqNum + 1;
             stream->server.ackNum = ntohl(tcpheader->ack_seq);
             stream->server.seqNum = ntohl(tcpheader->seq);
             stream->server.first_data_seq = stream->server.seqNum + 1;
@@ -357,7 +358,6 @@ static void notify(TCP_Stream* stream, TCP_Half_Stream* rcv, char whatto) {
 #ifdef _DEBUG
     printf("callback:stream:sport:%d,dport:%d\n", stream->tuple.src_port,
            stream->tuple.dst_port);
-    printf("%s\n", rcv->data);
 #endif
     // 1 得到上下行
     bool fromclient = ((rcv == &stream->client) ? true : false);
@@ -376,6 +376,10 @@ static void notify(TCP_Stream* stream, TCP_Half_Stream* rcv, char whatto) {
             default:  //回调函数处理的字节数
                 // 先转发，再移动数据
                 rcv->offset = rcv->ordered_count - ret;
+                if (rcv->offset < 0) {
+                    // 应用层返回值有错
+                    abort();
+                }
                 rcv->ordered_count = rcv->offset;
                 memmove(rcv->data, rcv->data + ret, rcv->offset);
         }
@@ -430,8 +434,9 @@ static void tcp_queque(TCP_Stream* stream,
         if (after(tcp_seq + datalen + tcpheader->fin, EXPSEQ)) {  //交叉情况
             copy2current_headers(rcv->current_headers, tcpheader, ipheader);
             rcv->current_headers_len = tcpheader->doff * 4 + ipheader->ihl * 4;
-            add_data_from_socket_buffer(stream, snd, rcv, data, datalen,
-                                        tcp_seq);
+            add_data_from_socket_buffer(stream, snd, rcv,
+                                        data + rcv->current_headers_len,
+                                        datalen, tcp_seq);
 
             //移动EXPSEQ后，检查list链表上是否满足了连续有序性
             Socket_Buffer* packet = rcv->list;
@@ -446,8 +451,10 @@ static void tcp_queque(TCP_Stream* stream,
                     memcpy(rcv->current_headers, packet->headers,
                            packet->headers_len);
                     rcv->current_headers_len = packet->headers_len;
-                    add_data_from_socket_buffer(stream, snd, rcv, packet->data,
-                                                packet->len, packet->seq);
+                    add_data_from_socket_buffer(
+                        stream, snd, rcv,
+                        packet->data + rcv->current_headers_len, packet->len,
+                        packet->seq);
                 }
                 rcv->rmem_alloc -= packet->truesize;
                 // 释放packet空间
@@ -672,6 +679,9 @@ void process_tcp(const unsigned char* data) {  // skblen?
                 stream->server.ackNum = ntohl(tcpheader->ack_seq);
             }
             if (sender->state == TCP_ESTABLISHED) {
+                if (sender->first_data_seq == 0) {  // 不完整流first seq的问题
+                    sender->first_data_seq = ntohl(tcpheader->seq);
+                }
                 // 正常的数据包，交给data处理部分
                 if (datalen > 0) {
                     // process data

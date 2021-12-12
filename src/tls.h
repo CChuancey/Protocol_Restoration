@@ -19,4 +19,6 @@ typedef struct tls_stream {
     Half_TLS_Stream client;
 } TLS_Stream;
 
+int process_tls(TCP_Stream* stream, bool fromclient, bool del);
+
 #endif

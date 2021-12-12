@@ -93,28 +93,34 @@ static void add_new_tls(Half_TLS_Stream* rcv,
  * >0：本次提交数据包处理的字节数
  */
 int process_tls(TCP_Stream* stream, bool fromclient, bool del) {
-    TLS_Stream* a_tls = find_stream(stream->hash_index, &stream->tuple);
-    unsigned char* data = (unsigned char*)malloc(sizeof(unsigned char));
-    if (data == NULL) {
-        show_log(__func__, "No Memory");
-        abort();
-    }
-    uint32_t datalen = 0;
-    Half_TLS_Stream* snd = NULL;
-    Half_TLS_Stream* rcv = NULL;
     if (fromclient) {
-        snd = &a_tls->client;
-        rcv = &a_tls->server;
-        memcpy(data, stream->client.data, stream->client.ordered_count);
-        datalen = stream->client.ordered_count;
+        printf("message:\n%s\n", (char*)stream->client.data);
     } else {
-        snd = &a_tls->server;
-        rcv = &a_tls->client;
-        memcpy(data, stream->server.data, stream->server.ordered_count);
-        datalen = stream->server.ordered_count;
+        printf("message:\n%s\n", (char*)stream->server.data);
     }
-    if (a_tls) {  //流已存在
-        // 设计处理状态
-    } else {
-    }
+    return 0;
+    // TLS_Stream* a_tls = find_stream(stream->hash_index, &stream->tuple);
+    // unsigned char* data = (unsigned char*)malloc(sizeof(unsigned char));
+    // if (data == NULL) {
+    //     show_log(__func__, "No Memory");
+    //     abort();
+    // }
+    // uint32_t datalen = 0;
+    // Half_TLS_Stream* snd = NULL;
+    // Half_TLS_Stream* rcv = NULL;
+    // if (fromclient) {
+    //     snd = &a_tls->client;
+    //     rcv = &a_tls->server;
+    //     memcpy(data, stream->client.data, stream->client.ordered_count);
+    //     datalen = stream->client.ordered_count;
+    // } else {
+    //     snd = &a_tls->server;
+    //     rcv = &a_tls->client;
+    //     memcpy(data, stream->server.data, stream->server.ordered_count);
+    //     datalen = stream->server.ordered_count;
+    // }
+    // if (a_tls) {  //流已存在
+    //     // 设计处理状态
+    // } else {
+    // }
 }
