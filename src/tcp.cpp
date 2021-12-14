@@ -170,7 +170,6 @@ static void free_a_timeout_tcp_stream(TCP_Stream* stream) {
     notify(stream, &stream->server, 1);
     memset(stream, 0, sizeof(TCP_Stream));
     stream->next_free = free_streams;  // 多线程处理PV操作
-    stream->next_free = free_streams;
     if (stream == tcp_oldest) {
         tcp_oldest = stream->pre_time;
     }
@@ -526,6 +525,7 @@ static void tcp_queque(TCP_Stream* stream,
         } else {  //将packet放在p后面
             packet->next = p->next;
             p->next = packet;
+            packet->pre = p;
             if (packet->next) {
                 packet->next->pre = packet;
             } else {

@@ -87,11 +87,20 @@ typedef struct proc_node {  //回调函数
 
 #define EXPSEQ (snd->first_data_seq + rcv->count)
 
+#ifndef __cplusplus
 void process_tcp(const unsigned char* data);
 int init_tcp(const int size);  // size为管理的tcp流的上限
 void free_timeout_tcp_streams(time_t*);
 
 void register_tcp_callbk(TCP_Fun);
 void unregister_tcp_callbk(TCP_Fun);
+#else
+extern "C" void process_tcp(const unsigned char* data);
+extern "C" int init_tcp(const int size);  // size为管理的tcp流的上限
+extern "C" void free_timeout_tcp_streams(time_t*);
+
+extern "C" void register_tcp_callbk(TCP_Fun);
+extern "C" void unregister_tcp_callbk(TCP_Fun);
+#endif
 
 #endif
