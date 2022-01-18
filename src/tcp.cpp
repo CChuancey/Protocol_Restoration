@@ -1,9 +1,14 @@
 #include "tcp.h"
+#include <arpa/inet.h>
+#include <netinet/in.h>
 #include <netinet/ip.h>
 #include <netinet/tcp.h>
+#include <pthread.h>
+#include <sys/socket.h>
 #include <time.h>
 #include "checksum.h"
 #include "hash.h"
+#include "trie.h"
 #include "utils.h"
 
 // TCP维护的变量
@@ -578,7 +583,61 @@ void process_tcp(const unsigned char* data) {  // skblen?
 
     //-----端口匹配------
     // to do 读取前缀树规则（匹配IP、端口号）
+    pthread_mutex_lock(&trie_thread_num_mutex);
+    using_trie_thread_num++;
+    if (using_trie_thread_num > 0) {
+        pthread_mutex_lock(&trie_replace_mutex);
+    }
+    pthread_mutex_unlock(&trie_thread_num_mutex);
+    struct in_addr sip_addr, dip_addr;
+    sip_addr.s_addr = ipheader->saddr;
+    dip_addr.s_addr = ipheader->daddr;
+    char trie_str[SQL_STR_LEN];
+    char* sip = (char*)malloc(strlen(inet_ntoa(sip_addr)) + 5);
+    char* dip = (char*)malloc(strlen(inet_ntoa(dip_addr)) + 5);
+    memcpy(sip, inet_ntoa(sip_addr), strlen(inet_ntoa(sip_addr)));
+    memcpy(dip, inet_ntoa(dip_addr), strlen(inet_ntoa(dip_addr)));
+    // printf("%s %s\n", sip, dip);
+    sprintf(trie_str, "sip:%s dip:%s sport:%d dport:%d", sip, dip,
+            ntohs(tcpheader->source), ntohs(tcpheader->dest));
 
+    while (worker_trie == NULL)
+        sleep(1);
+    printf("search string: %s\n", trie_str);
+    int rule_id = search(worker_trie, trie_str);
+    if (rule_id != -1) {
+        // 写日志
+        printf("find a packet in blacklist,rule id:%d\n", rule_id);
+        MYSQL* sql = NULL;
+        if (connect_to_sql(&sql) == -1) {
+            puts("connected failed");
+            return;
+        }
+        char sql_str[SQL_STR_LEN];
+        sprintf(sql_str,
+                "INSERT INTO `logs` VALUES(NULL,%d,'%s','%s',%d,%d,NOW())",
+                rule_id, sip, dip, ntohs(tcpheader->source),
+                ntohs(tcpheader->dest));
+        if (execute_sql_cmd(sql, sql_str) == -1) {
+            // 出现这个提示需要检查sql语句
+            fprintf(stderr, "sql cmd executed failed!\n");
+        }
+        pthread_mutex_lock(&trie_thread_num_mutex);
+        using_trie_thread_num--;
+        if (using_trie_thread_num == 0) {
+            pthread_mutex_unlock(&trie_replace_mutex);
+        }
+        pthread_mutex_unlock(&trie_thread_num_mutex);
+        return;
+    }
+    free(sip);
+    free(dip);
+    pthread_mutex_lock(&trie_thread_num_mutex);
+    using_trie_thread_num--;
+    if (using_trie_thread_num == 0) {
+        pthread_mutex_unlock(&trie_replace_mutex);
+    }
+    pthread_mutex_unlock(&trie_thread_num_mutex);
     //三次握手、四次挥手、数据包交付
     // 不需要设计处理状态，只需要每个半连接的状态
     int from_client = 0;

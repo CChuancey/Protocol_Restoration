@@ -7,6 +7,7 @@
 #include "checksum.h"
 #include "tcp.h"
 #include "tls.h"
+#include "trie.h"
 #include "utils.h"
 
 #define IP_LEVEL_OFFSET 14
@@ -17,8 +18,21 @@ int main() {
     init_hash();
     init_tcp(manage_tcp_stream_nums);
     register_tcp_callbk(process_tls);
-    if (caputure_packet_from_file("./doc/data.pcap", process_tcp) == -1)
+    pthread_t tid;
+
+    if (pthread_create(&tid, NULL, check_sql_server_status, NULL) == -1) {
+        fprintf(stderr, "thread create error\n");
         return -1;
-    release_pcap_resource();
+    }
+    if (caputure_packet_from_file("/home/chuancey/project/src/doc/1.pcap",
+                                  process_tcp) == -1)
+        return -1;
+    // release_pcap_resource();
+    // release_sql_resource(sql);
+    release_trie_resource();
+    while (1) {
+        sleep(1);
+    }
+
     return 0;
 }
