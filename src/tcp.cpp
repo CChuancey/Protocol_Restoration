@@ -156,6 +156,7 @@ static void free_tcp_queue_data(TCP_Half_Stream* half) {
 // 声明一次，方便下面的函数使用
 static void notify(TCP_Stream*, TCP_Half_Stream*, char);
 
+// 供tcp层判定tcp流超时时调用，不可用于应用层
 static void free_a_timeout_tcp_stream(TCP_Stream* stream) {
     int hash_index = stream->hash_index;
     del_closing_timeout_tcp_stream(stream);
@@ -328,7 +329,7 @@ static void add2buff(TCP_Half_Stream* rcv,
                      int datalen) {
     int toalloc;
     // 要加入的数据长度与缓冲区中已存在的数据长度之和大于缓冲区大小，扩充缓冲区
-    if (datalen + rcv->ordered_count - rcv->offset > rcv->buffsize) {
+    if (datalen + rcv->ordered_count > rcv->buffsize) {
         if (rcv->data == NULL) {  //设定初始的buffersize
             if (datalen < 2048) {
                 toalloc = 4096;
@@ -352,10 +353,37 @@ static void add2buff(TCP_Half_Stream* rcv,
             abort();
         }
     }
-    memcpy(rcv->data + rcv->ordered_count - rcv->offset, data, datalen);
+    memcpy(rcv->data + rcv->ordered_count, data, datalen);
     rcv->ordered_count += datalen;
     rcv->new_count = datalen;
     rcv->count += rcv->new_count;
+}
+
+// 当应用层判定流非法时需要将其删除
+static void free_an_illegal_tcp_stream(TCP_Stream* stream) {
+    int hash_index = stream->hash_index;
+    // del_closing_timeout_tcp_stream(stream);
+    free_tcp_queue_data(&stream->client);
+    free_tcp_queue_data(&stream->server);
+    // 从hash table中也要删除
+    if (stream->next_node) {
+        stream->next_node->pre_node = stream->pre_node;
+    }
+    if (stream->pre_node) {
+        stream->pre_node->next_node = stream->next_node;
+    } else {  // 在一条hash table元素的链表头部
+        hash_table[hash_index] = stream->next_node;
+    }
+    memset(stream, 0, sizeof(TCP_Stream));
+    stream->next_free = free_streams;  // 多线程处理PV操作
+    if (stream == tcp_oldest) {
+        tcp_oldest = stream->pre_time;
+    }
+    if (stream = tcp_latest) {
+        tcp_latest = stream->next_time;
+    }
+    free_streams = stream;
+    tcp_num--;
 }
 
 static void notify(TCP_Stream* stream, TCP_Half_Stream* rcv, char whatto) {
@@ -365,20 +393,23 @@ static void notify(TCP_Stream* stream, TCP_Half_Stream* rcv, char whatto) {
 #endif
     // 1 得到上下行
     bool fromclient = ((rcv == &stream->client) ? true : false);
+    bool has_listener = false;
     for (Proc_node* node = pnode; node; node = node->next) {
         // 类型值的强制转换可能出现问题
         int ret = (int)((node->fun)(stream, fromclient, whatto));
         switch (ret) {
+            case -3:  //删流成功
+                break;
             case -2:  //不是属于该回调函数处理的数据
                 break;
             case -1:  //删除
-                rcv->ordered_count = 0;
-                rcv->offset = 0;
+                free_an_illegal_tcp_stream(stream);
                 break;
             case 0:  //转发
                 break;
             default:  //回调函数处理的字节数
                 // 先转发，再移动数据
+                
                 rcv->offset = rcv->ordered_count - ret;
                 if (rcv->offset < 0) {
                     // 应用层返回值有错
@@ -387,9 +418,16 @@ static void notify(TCP_Stream* stream, TCP_Half_Stream* rcv, char whatto) {
                 rcv->ordered_count = rcv->offset;
                 memmove(rcv->data, rcv->data + ret, rcv->offset);
         }
+        if (ret != -2) {
+            has_listener = true;
+            break;
+        }
     }
     // 没有回调函数处理，转发
-    // put forward 不需要free?
+    // put forward
+    if (!has_listener) {
+        rcv->ordered_count = rcv->offset = 0;
+    }
 }
 
 static void add_data_from_socket_buffer(TCP_Stream* stream,
@@ -419,7 +457,7 @@ static void copy2current_headers(unsigned char* dst,
     memcpy(dst + ipheader->ihl * 4, tcpheader, tcpheader->doff * 4);
 }
 
-// 核心函数，TCP乱序重组+寻找listener
+// 核心函数，TCP乱序重组
 static void tcp_queque(TCP_Stream* stream,
                        struct tcphdr* tcpheader,
                        struct iphdr* ipheader,
@@ -489,7 +527,7 @@ static void tcp_queque(TCP_Stream* stream,
             abort();
         }
         // 暂时将truesize设置为结构体大小加data长度
-        packet->data = (unsigned char*)malloc(datalen);
+        packet->data = (unsigned char*)malloc(sizeof(unsigned char) * datalen);
         if (packet->data == NULL) {
             show_log(__func__, "allocate data memory failed!,no memory");
             abort();
@@ -573,13 +611,13 @@ void process_tcp(const unsigned char* data) {  // skblen?
         // free
         return;
     }
-    //数据包的校验和
-    if (my_tcp_check(tcpheader, ip_packet_len - 4 * ipheader->ihl,
-                     ipheader->saddr, ipheader->daddr)) {
-        show_log(__func__, "tcp check sum error!");
-        // free
-        return;
-    }
+    //数据包的校验和 摘自libnids源码，存在bug待研究
+    // if (my_tcp_check(tcpheader, ip_packet_len - 4 * ipheader->ihl,
+    //                  ipheader->saddr, ipheader->daddr)) {
+    //     show_log(__func__, "tcp check sum error!");
+    //     // free
+    //     return;
+    // }
 
     //-----端口匹配------
     // to do 读取前缀树规则（匹配IP、端口号）

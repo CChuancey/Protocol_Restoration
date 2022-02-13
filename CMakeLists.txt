@@ -12,5 +12,5 @@ add_executable(main ${SRC_LIST}) # 注意用的花括号
 add_definitions(-D _DEBUG)
 
 include(FindPCAP.cmake)
-target_link_libraries(main ${PCAP_LIBRARY} mysqlclient pthread)
+target_link_libraries(main ${PCAP_LIBRARY} mysqlclient pthread ssl crypto)
 

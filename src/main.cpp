@@ -20,19 +20,19 @@ int main() {
     register_tcp_callbk(process_tls);
     pthread_t tid;
 
-    if (pthread_create(&tid, NULL, check_sql_server_status, NULL) == -1) {
-        fprintf(stderr, "thread create error\n");
-        return -1;
-    }
-    if (caputure_packet_from_file("/home/chuancey/project/src/doc/1.pcap",
-                                  process_tcp) == -1)
+    // if (pthread_create(&tid, NULL, check_sql_server_status, NULL) == -1) {
+    //     fprintf(stderr, "thread create error\n");
+    //     return -1;
+    // }
+    if (caputure_packet_from_file(
+            "/home/chuancey/project/src/doc/bigFlows.pcap", process_tcp) == -1)
         return -1;
     // release_pcap_resource();
     // release_sql_resource(sql);
-    release_trie_resource();
-    while (1) {
-        sleep(1);
-    }
+    // release_trie_resource();
+    // while (1) {
+    //     sleep(1);
+    // }
 
     return 0;
 }
