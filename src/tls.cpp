@@ -313,10 +313,6 @@ int process_tls(TCP_Stream* stream, bool fromclient, bool del) {
     if (!check_if_it_is_TLS_handshake(data, datalen, &stream->tuple)) {
         return -2;
     }
-    for (int i = 0; i <= 5; i++) {
-        printf("0x%02x ", data[i]);
-    }
-    puts("");
     uint32_t handshake_packet_len = data[3] << 8;
     handshake_packet_len += data[4] + 5;
     // memcpy(&handshake_packet_len, data + 3, 2);
