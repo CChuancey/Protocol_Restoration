@@ -392,7 +392,7 @@ static void notify(TCP_Stream* stream, TCP_Half_Stream* rcv, char whatto) {
            stream->tuple.dst_port);
 #endif
     // 1 得到上下行
-    bool fromclient = ((rcv == &stream->client) ? true : false);
+    bool fromclient = ((rcv == &stream->server) ? true : false);
     bool has_listener = false;
     for (Proc_node* node = pnode; node; node = node->next) {
         // 类型值的强制转换可能出现问题
@@ -409,7 +409,7 @@ static void notify(TCP_Stream* stream, TCP_Half_Stream* rcv, char whatto) {
                 break;
             default:  //回调函数处理的字节数
                 // 先转发，再移动数据
-                
+
                 rcv->offset = rcv->ordered_count - ret;
                 if (rcv->offset < 0) {
                     // 应用层返回值有错
