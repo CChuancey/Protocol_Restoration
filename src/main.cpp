@@ -24,8 +24,8 @@ int main() {
     //     fprintf(stderr, "thread create error\n");
     //     return -1;
     // }
-    if (caputure_packet_from_file(
-            "/home/chuancey/project/src/doc/bigFlows.pcap", process_tcp) == -1)
+    if (caputure_packet_from_file("/home/chuancey/project/src/doc/tls1.2.pcap",
+                                  process_tcp) == -1)
         return -1;
     // release_pcap_resource();
     // release_sql_resource(sql);

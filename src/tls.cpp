@@ -305,9 +305,9 @@ int process_tls(TCP_Stream* stream, bool fromclient, bool del) {
         return -3;
     }
     unsigned char* data =
-        fromclient ? stream->client.data : stream->server.data;
-    uint32_t datalen = fromclient ? stream->client.ordered_count
-                                  : stream->server.ordered_count;
+        fromclient ? stream->server.data : stream->client.data;
+    uint32_t datalen = fromclient ? stream->server.ordered_count
+                                  : stream->client.ordered_count;
     if (datalen <= 5)
         return 0;
     if (!check_if_it_is_TLS_handshake(data, datalen, &stream->tuple)) {
