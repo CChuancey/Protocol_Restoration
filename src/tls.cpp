@@ -1,6 +1,8 @@
 #include "tls.h"
+#include "packet_local.h"
 #include <openssl/asn1.h>
 #include <openssl/err.h>
+#include <openssl/ssl3.h>
 #include <openssl/x509.h>
 
 /**
@@ -110,6 +112,88 @@ static char* get_server_extension_name(const char* data, uint32_t datalen) {
 }
 
 /**
+ * @brief Get the server extension name object
+ *
+ * @param data
+ * @param datalen
+ * @return char* NULL或者实际的域名
+ */
+static char *get_server_extension_name_by_openssl(const char *data,
+                                                  uint32_t datalen) {
+    PACKET packet{.curr = reinterpret_cast<const unsigned char *>(data),
+                  .remaining = datalen};
+
+    unsigned int handshake_type;
+    uint64_t length;
+    unsigned int version;
+    uint8_t random[SSL3_RANDOM_SIZE];
+    PACKET session_id_packet;
+    PACKET cipher_suites;
+    PACKET compressions;
+    // 跳过前缀
+    if (!PACKET_get_1(&packet, &handshake_type) ||
+        handshake_type != CLIENT_HELLO) {
+        return nullptr;
+    }
+    if (!PACKET_get_net_3(&packet, &length) || length != datalen - 4) {
+        return nullptr;
+    }
+    if (!PACKET_get_net_2(&packet, &version) || version != TLS1_2_VERSION) {
+        fprintf(stderr, "该握手报文TLS版本不是1.2");
+        return nullptr;
+    }
+    if (!PACKET_copy_bytes(&packet, random, SSL3_RANDOM_SIZE) ||
+        !PACKET_get_length_prefixed_1(&packet, &session_id_packet) ||
+        !PACKET_get_length_prefixed_2(&packet, &cipher_suites) ||
+        !PACKET_get_length_prefixed_1(&packet, &compressions)) {
+        return nullptr;
+    }
+
+    // extensions is empty!
+    if (PACKET_remaining(&packet) == 0) {
+        return nullptr;
+    }
+    // 解析extensions
+    PACKET extensions;
+    if (!PACKET_get_length_prefixed_2(&packet, &extensions)) {
+        return nullptr;
+    }
+    while (PACKET_remaining(&extensions) > 0) {
+        PACKET extension;
+        unsigned int type;
+        if (!PACKET_get_net_2(&extensions, &type) ||
+            !PACKET_get_length_prefixed_2(&extensions, &extension)) {
+            return nullptr;
+        }
+        if (type != TLSEXT_TYPE_server_name) {
+            continue;
+        }
+        // Found Server Name Extension
+        PACKET sni;
+        if (!PACKET_as_length_prefixed_2(&extension, &sni) ||
+            PACKET_remaining(&sni) == 0) {
+            return nullptr;
+        }
+        unsigned int servername_type;
+        PACKET host_name;
+        if (!PACKET_get_1(&sni, &servername_type) ||
+            servername_type != TLSEXT_NAMETYPE_host_name ||
+            !PACKET_as_length_prefixed_2(&sni, &host_name)) {
+            return 0;
+        }
+        char *ret = nullptr;
+        if (PACKET_remaining(&host_name) > TLSEXT_MAXLEN_host_name ||
+            PACKET_contains_zero_byte(&host_name) ||
+            !PACKET_strndup(&host_name, &ret)) {
+            return nullptr;
+        }
+        return ret;
+    }
+
+    return nullptr;
+}
+
+/**
  * @brief 核心函数：解析得到数据包中的SNI，并查询SNI黑名单，决定是否将其过滤
  *
  * @param data
@@ -121,7 +205,8 @@ static char* get_server_extension_name(const char* data, uint32_t datalen) {
  */
 static int parse_sni(const char* data, uint32_t datalen) {
     // client hello数据报文的二次校验，保证程序的健壮性
-    char* sni = get_server_extension_name(data, datalen);
+    // char *sni = get_server_extension_name(data, datalen);
+    char *sni = get_server_extension_name_by_openssl(data, datalen);
     if (sni == NULL)
         return datalen;
     puts(sni);
@@ -332,7 +417,7 @@ int process_tls(TCP_Stream* stream, bool fromclient, bool del) {
         case CLIENT_HELLO:
             puts("收到client hello");
             flag = true;
-            ret = parse_sni((const char*)(data + 5), datalen);
+            ret = parse_sni((const char*)(data + 5), datalen - 5);
             break;
         case CERTIFICATE:
             flag = true;
