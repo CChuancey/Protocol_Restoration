@@ -9,5 +9,5 @@ add_executable(main ${SRC_LIST}) # 注意用的花括号
 add_definitions(-D _DEBUG)
 
 include(FindPCAP.cmake)
-target_link_libraries(main ${PCAP_LIBRARY} ssl crypto)
-
+target_link_libraries(main ${PCAP_LIBRARY} ssl crypto pthread dl)
+include_directories(${CMAKE_SOURCE_DIR}/third_party/openssl)
