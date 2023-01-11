@@ -7,8 +7,11 @@
 # 使用
 1. `clone`本项目至Linux平台（Centos或者Ubuntu）
 2. 安装所需依赖`libpcap`、`cmake`
-   - 由于本项目需要从`mysql`中读取过滤规则，不需要过滤规则的朋友可以注释掉相关内容（utils.cpp以及CMakeLists.txt）
 3. 编译：
-  `cmake -S . -B build`
-  `cmake --build build`
-  
+```bash
+  cmake -S . -B build 
+  cmake --build build
+ ```
+
+# 说明
+`third_party/openssl`中两个头文件取自`openssl1.1.1s`源代码。
