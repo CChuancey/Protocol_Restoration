@@ -6,7 +6,7 @@
 
 # 使用
 1. `clone`本项目至Linux平台（Centos或者Ubuntu）
-2. 安装所需依赖`libpcap`、`cmake`
+2. 安装所需依赖`libpcap`、`cmake`、`openssl 1.1.1s`
 3. 编译：
 ```bash
   cmake -S . -B build 
